@@ -56,6 +56,7 @@ textarea { width: 100%; resize: vertical; min-height: 80px; }
 .btn.primary:hover:not(:disabled) { background: var(--accent-2); }
 .btn.danger { color: var(--danger); }
 .btn.small { padding: 5px 10px; font-size: 13px; }
+a.btn { color: inherit; text-decoration: none; display: inline-block; }
 
 .project-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
 .project-list li {
@@ -150,6 +151,32 @@ code { background: var(--panel-2); padding: 1px 6px; border-radius: 4px; }
 
 @media (max-width: 760px) {
   .layout { grid-template-columns: minmax(0, 1fr); }
+  .phone-btn { display: none; }
+  .tab { flex: 1; padding: 10px 6px; font-size: 14px; }
+  .rating { gap: 4px; }
+  .rating button { padding: 9px 0; font-size: 14px; }
+  .gallery { grid-template-columns: minmax(0, 1fr); }
+  .project-list { flex-direction: row; overflow-x: auto; }
+  .project-list li { flex-shrink: 0; }
+  .topbar { padding: 12px 16px; }
   .sidebar { border-right: none; border-bottom: 1px solid var(--border); }
   .main { padding: 16px; }
 }
+
+.topbar-right { display: flex; align-items: center; gap: 10px; }
+.result .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.result .actions .btn { flex: 1; text-align: center; text-decoration: none; }
+
+.modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .6); display: flex; align-items: center; justify-content: center; z-index: 20; padding: 16px; }
+.modal[hidden] { display: none; }
+.modal-box { max-width: 420px; width: 100%; text-align: center; margin: 0; }
+.qr { background: #fff; border-radius: 10px; padding: 10px; width: 220px; margin: 8px auto 14px; }
+.qr svg { display: block; width: 100%; height: auto; }
+.url-list { list-style: none; padding: 0; margin: 0 0 14px; font-size: 14px; }
+.url-list li { margin-bottom: 6px; }
+.url-list code { user-select: all; }
+
+.login-page { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 16px; }
+.login-card { width: 100%; max-width: 340px; display: flex; flex-direction: column; gap: 12px; text-align: center; align-items: stretch; }
+.login-card img { align-self: center; border-radius: 14px; }
+.login-card h1 { margin: 0 0 6px; font-size: 22px; }

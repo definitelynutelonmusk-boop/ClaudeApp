@@ -3,13 +3,20 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#171a21" />
   <title>Style Trainer</title>
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header class="topbar">
     <div class="brand">Style Trainer</div>
-    <div id="mode-badge" class="badge"></div>
+    <div class="topbar-right">
+      <button id="phone-btn" class="btn small phone-btn" type="button">📱 Open on phone</button>
+      <div id="mode-badge" class="badge"></div>
+    </div>
   </header>
 
   <div class="layout">
@@ -32,6 +39,14 @@
         </ol>
       </section>
     </main>
+  </div>
+
+  <div id="phone-modal" class="modal" hidden>
+    <div class="modal-box card">
+      <h2>Use it on your phone</h2>
+      <div id="phone-content"><p class="hint">Loading…</p></div>
+      <button class="btn" type="button" id="phone-close">Close</button>
+    </div>
   </div>
 
   <div id="toast" class="toast" hidden></div>

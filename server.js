@@ -2,6 +2,9 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const multer = require('multer');
+const QRCode = require('qrcode');
+const { setupAuth } = require('./lib/auth');
+const { lanUrls } = require('./lib/network');
 const { createStore } = require('./lib/store');
 const { LocalProvider } = require('./lib/local');
 const { DemoProvider } = require('./lib/demo');
@@ -15,11 +18,12 @@ function createProvider(env, dataDir) {
   return new LocalProvider({ dataDir, generationSteps: Number(env.GENERATION_STEPS) || 30 });
 }
 
-function createApp({ dataDir, provider, trainingSteps = 1000 }) {
+function createApp({ dataDir, provider, trainingSteps = 1000, password = '', port = 3000 }) {
   const store = createStore(dataDir);
   const { db, save, newId, projectDir, getProject, findImage } = store;
   const app = express();
   app.use(express.json());
+  setupAuth(app, password);
   app.use(express.static(path.join(__dirname, 'public')));
   // Only the image folders are public, never db.json.
   app.use('/files/projects', express.static(path.join(store.DATA_DIR, 'projects'), { dotfiles: 'deny' }));
@@ -86,6 +90,13 @@ function createApp({ dataDir, provider, trainingSteps = 1000 }) {
       minTrainingImages: MIN_TRAINING_IMAGES,
     })
   );
+
+  // Addresses + QR code for opening the app on a phone.
+  app.get('/api/connect', wrap(async (req, res) => {
+    const urls = lanUrls(port);
+    const qr = urls.length ? await QRCode.toString(urls[0].url, { type: 'svg', margin: 1 }) : null;
+    res.json({ urls, qr, passwordProtected: Boolean(password) });
+  }));
 
   app.get('/api/projects', wrap(async (req, res) => {
     await Promise.all(db.projects.map(refreshTraining));
@@ -275,14 +286,26 @@ if (require.main === module) {
   if (process.argv.includes('--demo')) process.env.DEMO_MODE = '1';
   const dataDir = process.env.DATA_DIR || path.join(__dirname, 'data');
   const provider = createProvider(process.env, dataDir);
+  const port = Number(process.env.PORT) || 3000;
   const app = createApp({
     dataDir,
     provider,
     trainingSteps: Number(process.env.TRAINING_STEPS) || 1000,
+    password: process.env.APP_PASSWORD || '',
+    port,
   });
-  const port = Number(process.env.PORT) || 3000;
-  app.listen(port, () => {
+  app.listen(port, process.env.HOST || undefined, async () => {
     console.log(`Style Trainer running at http://localhost:${port}`);
+    const urls = lanUrls(port);
+    if (urls.length) {
+      console.log('\nOn your phone (same Wi-Fi), open:');
+      for (const u of urls) console.log(`  ${u.url}   (${u.label})`);
+      console.log('\nOr scan this with your phone camera:');
+      console.log(await QRCode.toString(urls[0].url, { type: 'terminal', small: true }));
+      if (!process.env.APP_PASSWORD) {
+        console.log('Tip: set APP_PASSWORD in .env so others on your Wi-Fi can’t use it.\n');
+      }
+    }
     if (provider.mode === 'demo') {
       console.log('DEMO MODE: training and images are simulated.');
       return;

@@ -30,7 +30,16 @@ async function api(method, url, body) {
     opts.headers['Content-Type'] = 'application/json';
     opts.body = JSON.stringify(body);
   }
-  const res = await fetch(url, opts);
+  let res;
+  try {
+    res = await fetch(url, opts);
+  } catch {
+    throw new Error('Can’t reach your computer. Check that the app is running and you’re on the same Wi-Fi.');
+  }
+  if (res.status === 401) {
+    location.href = '/login.html';
+    throw new Error('Please log in');
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
   return data;
@@ -84,7 +93,10 @@ function resultCard(img, gen) {
     <div class="body">
       <div class="prompt" title="${esc(gen.prompt)}">${esc(gen.prompt)}</div>
       ${ratingWidget(img)}
-      ${canAdd ? `<button class="btn small" data-add="${img.id}">+ Add to training pictures</button>` : ''}
+      <div class="actions">
+        <a class="btn small" href="${img.url}" download>Save</a>
+        ${canAdd ? `<button class="btn small" data-add="${img.id}">+ Add to training</button>` : ''}
+      </div>
       ${img.addedToTraining ? `<div class="hint" style="margin:0">✓ Added to training pictures</div>` : ''}
     </div>
   </div>`;
@@ -118,7 +130,7 @@ function renderTrainTab(p) {
         Use clear, varied pictures (different angles, backgrounds and lighting). JPG, PNG or WebP.</p>
       <label class="dropzone" id="dropzone">
         <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp" multiple hidden />
-        ${state.uploading ? 'Uploading…' : '<b>Click to choose pictures</b> or drag and drop them here'}
+        ${state.uploading ? 'Uploading…' : '<b>Tap to choose pictures</b> or drag and drop them here'}
       </label>
       <div class="thumbs">
         ${p.trainingImages
@@ -245,7 +257,7 @@ function renderMain() {
       </div>
     </div>
     <nav class="tabs">
-      <button class="tab ${state.tab === 'train' ? 'active' : ''}" data-tab="train">Training pictures</button>
+      <button class="tab ${state.tab === 'train' ? 'active' : ''}" data-tab="train">Train</button>
       <button class="tab ${state.tab === 'create' ? 'active' : ''}" data-tab="create" ${ready ? '' : 'disabled title="Train the model first"'}>Create</button>
       <button class="tab ${state.tab === 'gallery' ? 'active' : ''}" data-tab="gallery" ${ready ? '' : 'disabled title="Train the model first"'}>Gallery & ratings</button>
     </nav>
@@ -412,7 +424,12 @@ main.addEventListener('click', async (e) => {
       state.latestGenId = gen.id;
       upsertProject(await api('GET', `/api/projects/${p.id}`));
     } catch (err) {
-      toast(err.message, true);
+      toast(
+        err.message.startsWith('Can’t reach')
+          ? 'Lost connection while making pictures. If your computer is still on, they’ll show up in the Gallery.'
+          : err.message,
+        true
+      );
     } finally {
       state.generating = false;
       render();
@@ -465,6 +482,53 @@ main.addEventListener('drop', (e) => {
   dz.classList.remove('drag');
   uploadFiles(e.dataTransfer.files);
 });
+
+/* ---------- phone ---------- */
+
+async function openPhoneModal() {
+  $('#phone-modal').hidden = false;
+  const box = $('#phone-content');
+  try {
+    const info = await api('GET', '/api/connect');
+    if (!info.urls.length) {
+      box.innerHTML = `<p class="hint">This computer doesn’t seem to be on a home network. Connect it to Wi-Fi or Ethernet and try again.</p>`;
+      return;
+    }
+    box.innerHTML = `
+      <p class="hint">Connect your phone to the same Wi-Fi, then scan this with the camera:</p>
+      <div class="qr">${info.qr}</div>
+      <p class="hint">Or type one of these into your phone’s browser:</p>
+      <ul class="url-list">${info.urls.map((u) => `<li><code>${esc(u.url)}</code> <span class="hint">${esc(u.label)}</span></li>`).join('')}</ul>
+      <p class="hint">Not loading? Allow Node.js through Windows Firewall (on private networks).
+        To add it to your home screen, open your browser’s menu and choose <b>Add to Home screen</b>.</p>
+      ${info.passwordProtected ? '' : `<p class="notice warn">No password set, so anyone on your Wi-Fi can use the app. Set <code>APP_PASSWORD</code> in <code>.env</code> to lock it.</p>`}`;
+  } catch (e) {
+    box.innerHTML = `<p class="notice err">${esc(e.message)}</p>`;
+  }
+}
+
+$('#phone-btn').addEventListener('click', openPhoneModal);
+$('#phone-close').addEventListener('click', () => ($('#phone-modal').hidden = true));
+$('#phone-modal').addEventListener('click', (e) => {
+  if (e.target.id === 'phone-modal') $('#phone-modal').hidden = true;
+});
+
+// Coming back to the app (e.g. after locking your phone): catch up on anything that finished meanwhile.
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState !== 'visible' || !state.currentId) return;
+  try {
+    upsertProject(await api('GET', `/api/projects/${state.currentId}`));
+    state.generations = await api('GET', `/api/projects/${state.currentId}/generations`);
+    render();
+    schedulePoll();
+  } catch (e) {
+    console.error(e);
+  }
+});
+
+if ('serviceWorker' in navigator && window.isSecureContext) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
 
 /* ---------- start ---------- */
 
