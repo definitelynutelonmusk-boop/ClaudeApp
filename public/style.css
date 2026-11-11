@@ -31,6 +31,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .badge { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--panel-2); color: var(--muted); }
 .badge.demo { background: rgba(245, 184, 74, .15); color: var(--warn); }
 .badge.live { background: rgba(62, 207, 142, .15); color: var(--ok); }
+.badge.err { background: rgba(255, 92, 122, .15); color: var(--danger); }
 
 .layout { display: grid; grid-template-columns: 280px minmax(0, 1fr); min-height: calc(100vh - 57px); }
 .sidebar { border-right: 1px solid var(--border); padding: 16px; background: var(--panel); }
@@ -116,6 +117,7 @@ code { background: var(--panel-2); padding: 1px 6px; border-radius: 4px; }
 
 .progress { height: 6px; background: var(--panel-2); border-radius: 999px; overflow: hidden; margin-top: 10px; }
 .progress > div { height: 100%; width: 40%; background: var(--accent); animation: slide 1.4s infinite ease-in-out; }
+.progress > div.fixed { animation: none; transition: width .5s; }
 @keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(260%); } }
 
 .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }

@@ -1,5 +1,6 @@
 const state = {
   mode: null,
+  engine: null,
   minImages: 5,
   projects: [],
   currentId: null,
@@ -89,6 +90,22 @@ function resultCard(img, gen) {
   </div>`;
 }
 
+function progressBar(percent) {
+  return percent == null
+    ? '<div class="progress"><div></div></div>'
+    : `<div class="progress"><div class="fixed" style="width:${percent}%"></div></div>`;
+}
+
+function engineNotice() {
+  const e = state.engine;
+  if (state.mode !== 'local' || !e || e.checking) return '';
+  if (!e.ok) return `<div class="notice err" style="margin:0 0 18px">Local AI isn’t ready: ${esc(e.error)}</div>`;
+  if (e.device === 'cpu') {
+    return `<div class="notice warn" style="margin:0 0 18px">No supported graphics card found, so the AI will run on your processor. That works, but training can take many hours and each picture several minutes.</div>`;
+  }
+  return '';
+}
+
 function renderTrainTab(p) {
   const n = p.trainingImages.length;
   const enough = n >= state.minImages;
@@ -118,7 +135,7 @@ function renderTrainTab(p) {
       <p class="hint">${
         state.mode === 'demo'
           ? 'Demo mode: training is simulated and takes a few seconds.'
-          : 'Training usually takes 15–30 minutes and costs a couple of dollars on Replicate. You can close this page and come back.'
+          : 'Training runs on your own computer. With a good graphics card it takes about 15–40 minutes, and the first time also downloads the base model (several GB). Keep the app running; you can close this page and come back.'
       }</p>
       <div class="row">
         <button class="btn primary" id="train-btn" ${!enough || isTraining || state.training ? 'disabled' : ''}>
@@ -126,7 +143,7 @@ function renderTrainTab(p) {
         </button>
         ${!enough ? `<span class="hint" style="margin:0">Add at least ${state.minImages - n} more picture${state.minImages - n === 1 ? '' : 's'}.</span>` : ''}
       </div>
-      ${isTraining ? `<div class="progress"><div></div></div><p class="hint" style="margin-top:8px">${esc(p.progress || 'Working…')}</p>` : ''}
+      ${isTraining ? `${progressBar(p.percent)}<p class="hint" style="margin-top:8px">${esc(p.progress || 'Working…')}</p>` : ''}
       ${p.status === 'ready' && !isTraining ? `<div class="notice ok">Your model is trained${newSinceTrain ? `, but you've changed the pictures since then. Retrain to use them.` : '. Go to <b>Create</b> to make pictures.'}</div>` : ''}
       ${p.error ? `<div class="notice err">${esc(p.error)}</div>` : ''}
     </div>`;
@@ -157,7 +174,7 @@ function renderCreateTab(p) {
         <button class="btn primary" id="generate-btn" ${state.generating ? 'disabled' : ''}>
           ${state.generating ? 'Making pictures…' : 'Generate'}</button>
       </div>
-      ${state.generating ? '<div class="progress"><div></div></div>' : ''}
+      ${state.generating ? `${progressBar(null)}<p class="hint" style="margin-top:8px">${state.mode === 'local' ? 'Working on your computer. The first picture after starting the app takes longer while the model loads.' : 'Working…'}</p>` : ''}
     </div>
     ${
       latest
@@ -232,6 +249,7 @@ function renderMain() {
       <button class="tab ${state.tab === 'create' ? 'active' : ''}" data-tab="create" ${ready ? '' : 'disabled title="Train the model first"'}>Create</button>
       <button class="tab ${state.tab === 'gallery' ? 'active' : ''}" data-tab="gallery" ${ready ? '' : 'disabled title="Train the model first"'}>Gallery & ratings</button>
     </nav>
+    ${engineNotice()}
     <div id="tab-content">${
       state.tab === 'train' ? renderTrainTab(p) : state.tab === 'create' ? renderCreateTab(p) : renderGalleryTab()
     }</div>`;
@@ -271,7 +289,7 @@ function schedulePoll() {
       console.error(e);
     }
     schedulePoll();
-  }, state.mode === 'demo' ? 2000 : 15000);
+  }, state.mode === 'demo' ? 2000 : 4000);
 }
 
 async function uploadFiles(files) {
@@ -450,14 +468,33 @@ main.addEventListener('drop', (e) => {
 
 /* ---------- start ---------- */
 
+async function loadStatus() {
+  const status = await api('GET', '/api/status');
+  state.mode = status.mode;
+  state.engine = status.engine;
+  state.minImages = status.minTrainingImages;
+  const badge = $('#mode-badge');
+  const e = status.engine;
+  if (status.mode === 'demo') {
+    badge.textContent = 'Demo mode (fake images)';
+    badge.className = 'badge demo';
+  } else if (!e || e.checking) {
+    badge.textContent = 'Local AI: checking…';
+    badge.className = 'badge';
+    setTimeout(() => loadStatus().then(render).catch(console.error), 3000);
+  } else if (!e.ok) {
+    badge.textContent = 'Local AI: not set up';
+    badge.className = 'badge err';
+  } else {
+    badge.textContent = `Local AI · ${e.gpu || 'CPU only (slow)'}`;
+    badge.className = 'badge ' + (e.device === 'cpu' ? 'demo' : 'live');
+    badge.title = `Base model: ${e.baseModel}`;
+  }
+}
+
 (async function init() {
   try {
-    const status = await api('GET', '/api/status');
-    state.mode = status.mode;
-    state.minImages = status.minTrainingImages;
-    const badge = $('#mode-badge');
-    badge.textContent = status.mode === 'demo' ? 'Demo mode (fake images)' : 'Connected to Replicate';
-    badge.className = 'badge ' + (status.mode === 'demo' ? 'demo' : 'live');
+    await loadStatus();
     state.projects = await api('GET', '/api/projects');
     renderSidebar();
     if (state.projects.length) selectProject(state.projects[0].id);

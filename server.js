@@ -2,20 +2,17 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const multer = require('multer');
-const JSZip = require('jszip');
 const { createStore } = require('./lib/store');
-const { ReplicateProvider } = require('./lib/replicate');
+const { LocalProvider } = require('./lib/local');
 const { DemoProvider } = require('./lib/demo');
 
 const MIN_TRAINING_IMAGES = 5;
 const IMAGE_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
 const ASPECT_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4'];
 
-function createProvider(env) {
-  if (env.REPLICATE_API_TOKEN && env.DEMO_MODE !== '1') {
-    return new ReplicateProvider({ token: env.REPLICATE_API_TOKEN, trainer: env.REPLICATE_TRAINER || undefined });
-  }
-  return new DemoProvider({ trainingMs: Number(env.DEMO_TRAINING_MS) || 8000 });
+function createProvider(env, dataDir) {
+  if (env.DEMO_MODE === '1') return new DemoProvider({ trainingMs: Number(env.DEMO_TRAINING_MS) || 8000 });
+  return new LocalProvider({ dataDir, generationSteps: Number(env.GENERATION_STEPS) || 30 });
 }
 
 function createApp({ dataDir, provider, trainingSteps = 1000 }) {
@@ -51,19 +48,22 @@ function createApp({ dataDir, provider, trainingSteps = 1000 }) {
   async function refreshTraining(p) {
     if (p.status !== 'training' || !p.trainingId) return;
     try {
-      const t = await provider.getTraining(p.trainingId);
+      const t = await provider.getTraining({ trainingId: p.trainingId, version: p.pendingVersion });
       p.progress = t.progress || null;
+      p.percent = t.percent ?? null;
       if (t.status === 'ready') {
         p.status = 'ready';
         p.version = t.version;
         p.trainedAt = new Date().toISOString();
         p.trainedImageCount = p.pendingImageCount;
         p.progress = null;
+        p.percent = null;
       } else if (t.status === 'failed') {
         // If an older version exists the model is still usable.
         p.status = p.version ? 'ready' : 'failed';
         p.error = t.error || 'Training failed';
         p.progress = null;
+        p.percent = null;
       }
       save();
     } catch (e) {
@@ -79,7 +79,13 @@ function createApp({ dataDir, provider, trainingSteps = 1000 }) {
     return p;
   }
 
-  app.get('/api/status', (req, res) => res.json({ mode: provider.mode, minTrainingImages: MIN_TRAINING_IMAGES }));
+  app.get('/api/status', (req, res) =>
+    res.json({
+      mode: provider.mode,
+      engine: provider.status ? provider.status() : null,
+      minTrainingImages: MIN_TRAINING_IMAGES,
+    })
+  );
 
   app.get('/api/projects', wrap(async (req, res) => {
     await Promise.all(db.projects.map(refreshTraining));
@@ -95,7 +101,6 @@ function createApp({ dataDir, provider, trainingSteps = 1000 }) {
       name,
       // A made-up word the AI links to your pictures. It's added to every prompt.
       triggerWord: `STY${id.slice(0, 4).toUpperCase()}`,
-      modelName: `style-trainer-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'model'}-${id}`,
       status: 'draft',
       trainingImages: [],
       createdAt: new Date().toISOString(),
@@ -161,20 +166,17 @@ function createApp({ dataDir, provider, trainingSteps = 1000 }) {
     if (p.trainingImages.length < MIN_TRAINING_IMAGES) {
       return res.status(400).json({ error: `Add at least ${MIN_TRAINING_IMAGES} pictures first (10–20 works best)` });
     }
-    const zip = new JSZip();
     const dir = projectDir(p.id, 'training');
-    for (const file of p.trainingImages) zip.file(file, fs.readFileSync(path.join(dir, file)));
-    const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
-
-    const { trainingId } = await provider.startTraining({
-      zipBuffer,
-      modelName: p.modelName,
+    const { trainingId, version } = await provider.startTraining({
+      imagePaths: p.trainingImages.map((file) => path.join(dir, file)),
       triggerWord: p.triggerWord,
       steps: trainingSteps,
+      outputDir: projectDir(p.id, 'models'),
     });
     Object.assign(p, {
       status: 'training',
       trainingId,
+      pendingVersion: version,
       error: null,
       progress: 'Starting…',
       trainingStartedAt: new Date().toISOString(),
@@ -257,7 +259,7 @@ function createApp({ dataDir, provider, trainingSteps = 1000 }) {
 
   app.use((err, req, res, next) => {
     console.error(err);
-    const status = err instanceof multer.MulterError ? 400 : 500;
+    const status = err.status || (err instanceof multer.MulterError ? 400 : 500);
     res.status(status).json({ error: err.message || 'Something went wrong' });
   });
 
@@ -270,21 +272,34 @@ if (require.main === module) {
   } catch {
     /* no .env file */
   }
-  const provider = createProvider(process.env);
+  if (process.argv.includes('--demo')) process.env.DEMO_MODE = '1';
+  const dataDir = process.env.DATA_DIR || path.join(__dirname, 'data');
+  const provider = createProvider(process.env, dataDir);
   const app = createApp({
-    dataDir: process.env.DATA_DIR || path.join(__dirname, 'data'),
+    dataDir,
     provider,
     trainingSteps: Number(process.env.TRAINING_STEPS) || 1000,
   });
   const port = Number(process.env.PORT) || 3000;
   app.listen(port, () => {
     console.log(`Style Trainer running at http://localhost:${port}`);
-    console.log(
-      provider.mode === 'demo'
-        ? 'DEMO MODE: no REPLICATE_API_TOKEN set, so training and images are simulated.'
-        : 'Using Replicate for real training and image generation.'
-    );
+    if (provider.mode === 'demo') {
+      console.log('DEMO MODE: training and images are simulated.');
+      return;
+    }
+    console.log('Checking the local AI…');
+    provider.check().then((info) => {
+      if (!info.ok) return console.log(`Local AI not ready: ${info.error}`);
+      const where = info.gpu ? `${info.gpu}${info.vramGb ? ` (${info.vramGb} GB)` : ''}` : 'CPU (very slow!)';
+      console.log(`Local AI ready on ${where}. Base model: ${info.baseModel}`);
+    });
   });
+  const stop = () => {
+    provider.shutdown?.();
+    process.exit(0);
+  };
+  process.on('SIGINT', stop);
+  process.on('SIGTERM', stop);
 }
 
 module.exports = { createApp, createProvider };
