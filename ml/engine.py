@@ -315,6 +315,8 @@ def cmd_serve(_args):
                     pipe.unload_lora_weights()
                     loaded_lora = None
                 if lora:
+                    if not os.path.isfile(os.path.join(lora, LORA_FILE)):
+                        raise RuntimeError("This model's trained files are missing. Retrain it.")
                     pipe.load_lora_weights(lora, weight_name=LORA_FILE)
                 loaded_lora = lora
 
