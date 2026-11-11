@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Style Trainer</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Style Trainer</div>
+    <div id="mode-badge" class="badge"></div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <form id="new-project-form" class="new-project">
+        <input id="new-project-name" placeholder="New model name, e.g. My dog" maxlength="60" required />
+        <button type="submit" class="btn primary">Create</button>
+      </form>
+      <ul id="project-list" class="project-list"></ul>
+    </aside>
+
+    <main id="main" class="main">
+      <section class="empty-state">
+        <h1>Teach an AI your style</h1>
+        <ol class="steps">
+          <li><b>Create a model</b> on the left and upload 10–20 good pictures of what you want.</li>
+          <li><b>Train</b> it. The AI learns from your pictures.</li>
+          <li><b>Type a prompt</b> and get new pictures based on what it learned.</li>
+          <li><b>Rate each picture out of 10.</b> Add your best ones back to the training set to make it even better.</li>
+        </ol>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>
